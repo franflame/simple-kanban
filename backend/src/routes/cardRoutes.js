@@ -100,6 +100,7 @@ router.put('/:id', async (req, res, next) => {
 });
 
 router.put('/:id/move', async (req, res, next) => {
+  let connection;
   try {
     const id = Number(req.params.id);
     const columnId = Number(req.body.column_id);
@@ -110,19 +111,29 @@ router.put('/:id/move', async (req, res, next) => {
       throw error;
     }
 
-    const position = await nextPosition(columnId);
-    await pool.query('UPDATE cards SET column_id = ?, position = ? WHERE id = ?', [columnId, position, id]);
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
 
-    const [[card]] = await pool.query('SELECT * FROM cards WHERE id = ?', [id]);
-    if (!card) {
+    const [[existingCard]] = await connection.query('SELECT * FROM cards WHERE id = ? FOR UPDATE', [id]);
+    if (!existingCard) {
       const error = new Error('Card not found');
       error.status = 404;
       throw error;
     }
 
+    if (existingCard.column_id !== columnId) {
+      await connection.query('UPDATE cards SET position = position + 1 WHERE column_id = ?', [columnId]);
+      await connection.query('UPDATE cards SET column_id = ?, position = 1 WHERE id = ?', [columnId, id]);
+    }
+
+    const [[card]] = await connection.query('SELECT * FROM cards WHERE id = ?', [id]);
+    await connection.commit();
     res.json(card);
   } catch (error) {
+    if (connection) await connection.rollback();
     next(error);
+  } finally {
+    if (connection) connection.release();
   }
 });
 

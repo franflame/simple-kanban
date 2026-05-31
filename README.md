@@ -7,13 +7,13 @@ A simple Dockerized Kanban board built with:
 - MySQL database
 - Gemini-powered daily task summary
 
-The board supports columns, cards, due dates, editing, moving, deleting, and per-column sorting by inferred urgency or due date. The AI feature reads all tasks, descriptions, due dates, and statuses, then generates a higher-level daily briefing plus a suggested order of work.
+The board supports columns, cards, due dates, editing, drag-and-drop moving, deleting, and per-column sorting by inferred urgency or due date. The AI feature reads all tasks, descriptions, due dates, and statuses, then generates a higher-level daily briefing plus a suggested order of work.
 
 ## Run the app
 
 ```bash
 cp .env.example .env
-# Add your Gemini API key to .env
+# Add your Gemini API key and replace the example database passwords in .env
 
 docker compose up --build
 ```
@@ -32,9 +32,14 @@ AI_MODEL=gemini-2.5-flash
 AI_PROVIDER=gemini
 AI_API_URL=
 VITE_API_BASE_URL=http://localhost:5000/api
+MYSQL_ROOT_PASSWORD=change-me-root-password
+MYSQL_DATABASE=kanban
+MYSQL_USER=change-me-app-user
+MYSQL_PASSWORD=change-me-app-password
 ```
 
 `AI_API_URL` can stay blank for Gemini because the backend builds the Gemini `generateContent` URL internally.
+The MySQL values are read from `.env` by Docker Compose so real database credentials do not need to be committed.
 
 ## AI feature
 
@@ -122,7 +127,7 @@ kanban-ai-board/
 ## Notes
 
 - MySQL is seeded with three columns and realistic sample cards.
-- The app intentionally uses simple move controls instead of drag-and-drop to keep the implementation reliable and easy to review.
+- Cards can be moved by dragging them onto another column.
 - Data persists in the Docker volume `mysql_data`.
 - To reset the database and reload the seed data, run:
 

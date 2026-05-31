@@ -59,6 +59,8 @@ function App() {
   const [smartPriority, setSmartPriority] = useState(false);
   const [loadingBoard, setLoadingBoard] = useState(true);
   const [loadingSummary, setLoadingSummary] = useState(false);
+  const [draggingCardId, setDraggingCardId] = useState(null);
+  const [dragOverColumnId, setDragOverColumnId] = useState(null);
   const [error, setError] = useState('');
 
   const activeTaskCount = useMemo(
@@ -163,6 +165,42 @@ function App() {
       setBoard(previousBoard);
       setError(err.message);
     }
+  }
+
+  function handleCardDragStart(event, cardId) {
+    setDraggingCardId(cardId);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', String(cardId));
+  }
+
+  function handleColumnDragOver(event, columnId) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  }
+
+  function handleColumnDragEnter(columnId) {
+    setDragOverColumnId((currentColumnId) => (
+      currentColumnId === columnId ? currentColumnId : columnId
+    ));
+  }
+
+  async function handleColumnDrop(event, columnId) {
+    event.preventDefault();
+    const droppedCardId = Number(event.dataTransfer.getData('text/plain') || draggingCardId);
+    setDraggingCardId(null);
+    setDragOverColumnId(null);
+
+    if (!droppedCardId) return;
+
+    const sourceColumn = board.find((column) => column.cards.some((card) => card.id === droppedCardId));
+    if (!sourceColumn || sourceColumn.id === columnId) return;
+
+    moveCard(droppedCardId, columnId);
+  }
+
+  function handleDragEnd() {
+    setDraggingCardId(null);
+    setDragOverColumnId(null);
   }
 
   async function deleteCard(cardId) {
@@ -295,7 +333,16 @@ function App() {
           {board.map((column) => {
             const cards = getSortedCards(column.cards, sortMode);
             return (
-              <article className="column" key={column.id}>
+              <article
+                className={`column ${dragOverColumnId === column.id ? 'column-drop-target' : ''}`}
+                key={column.id}
+                onDragOver={(event) => handleColumnDragOver(event, column.id)}
+                onDragEnter={() => handleColumnDragEnter(column.id)}
+                onDragLeave={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget)) setDragOverColumnId(null);
+                }}
+                onDrop={(event) => handleColumnDrop(event, column.id)}
+              >
                 <div className="column-header">
                   <h2>{column.name}</h2>
                   <span>{column.cards.length}</span>
@@ -307,9 +354,11 @@ function App() {
                       key={card.id}
                       card={card}
                       columns={board}
-                      onMove={moveCard}
                       onUpdate={updateCard}
                       onDelete={deleteCard}
+                      onDragStart={handleCardDragStart}
+                      onDragEnd={handleDragEnd}
+                      isDragging={draggingCardId === card.id}
                     />
                   ))}
                 </div>
@@ -338,7 +387,7 @@ function SummaryDetails({ summary }) {
   );
 }
 
-function TaskCard({ card, columns, onMove, onUpdate, onDelete }) {
+function TaskCard({ card, columns, onUpdate, onDelete, onDragStart, onDragEnd, isDragging }) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(cardToDraft(card));
   const urgencyClass = `priority-${card.priority || 'normal'}`;
@@ -360,7 +409,12 @@ function TaskCard({ card, columns, onMove, onUpdate, onDelete }) {
   }
 
   return (
-    <article className={`task-card ${urgencyClass}`}>
+    <article
+      className={`task-card ${urgencyClass} ${isDragging ? 'dragging' : ''} ${isEditing ? 'task-card-editing' : ''}`}
+      draggable={!isEditing}
+      onDragStart={(event) => onDragStart(event, card.id)}
+      onDragEnd={onDragEnd}
+    >
       {isEditing ? (
         <form className="inline-edit-form" onSubmit={saveInlineEdit}>
           <input className="inline-title" value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} required />
@@ -397,9 +451,6 @@ function TaskCard({ card, columns, onMove, onUpdate, onDelete }) {
           <h3>{card.title}</h3>
           <p>{card.description || 'No description provided.'}</p>
           <div className="card-actions">
-            <select value={card.column_id} onChange={(event) => onMove(card.id, Number(event.target.value))} aria-label={`Move ${card.title}`}>
-              {columns.map((column) => <option key={column.id} value={column.id}>{column.name}</option>)}
-            </select>
             <button type="button" onClick={() => setIsEditing(true)}>Edit</button>
             <button type="button" className="danger" onClick={() => onDelete(card.id)}>Delete</button>
           </div>
@@ -488,7 +539,7 @@ function moveCardInBoard(board, cardId, columnId) {
   if (!movedCard) return board;
   return withoutCard.map((column) => (
     column.id === columnId
-      ? { ...column, cards: [...column.cards, movedCard] }
+      ? { ...column, cards: [movedCard, ...column.cards] }
       : column
   ));
 }
